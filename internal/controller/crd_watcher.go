@@ -9,12 +9,14 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/appslap/clap/internal/naming"
@@ -106,6 +108,25 @@ func (w *CRDWatcher) ensureController(gvk schema.GroupVersionKind) error {
 		w.Manager.GetCache(),
 		client.Object(claim),
 		&handler.TypedEnqueueRequestForObject[client.Object]{},
+	)); err != nil {
+		return err
+	}
+
+	// Also watch the composite so its status changes re-reconcile the claim.
+	// The claim lives in a different namespace, recovered from the back-reference
+	// annotation CLAP stamps on the composite.
+	comp := &unstructured.Unstructured{}
+	comp.SetGroupVersionKind(naming.CompositeGVK(gvk))
+	if err := c.Watch(source.Kind(
+		w.Manager.GetCache(),
+		client.Object(comp),
+		handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []reconcile.Request {
+			ns := o.GetAnnotations()[claimNamespaceAnnotation]
+			if ns == "" {
+				return nil
+			}
+			return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: ns, Name: o.GetName()}}}
+		}),
 	)); err != nil {
 		return err
 	}

@@ -15,6 +15,13 @@ import (
 	"github.com/appslap/clap/internal/naming"
 )
 
+// claimNamespaceAnnotation is a clap-owned back-reference, stamped on each
+// composite, recording the namespace of the claim that owns it. It lets the
+// CRDWatcher map composite status events back to the originating claim (which
+// lives in a different namespace). This is CLAP bookkeeping, not propagated
+// claim metadata.
+const claimNamespaceAnnotation = "clap.appslap.io/claim-namespace"
+
 // ClaimReconciler reconciles a single claim GVK. One instance is created per
 // dynamically discovered claim kind by the CRDWatcher.
 type ClaimReconciler struct {
@@ -90,6 +97,7 @@ func buildComposite(claim *unstructured.Unstructured, namespace string) *unstruc
 	comp.SetGroupVersionKind(naming.CompositeGVK(claim.GroupVersionKind()))
 	comp.SetNamespace(namespace)
 	comp.SetName(claim.GetName())
+	comp.SetAnnotations(map[string]string{claimNamespaceAnnotation: claim.GetNamespace()})
 	if spec, found, _ := unstructured.NestedMap(claim.Object, "spec"); found {
 		// NestedMap returns a deep copy, safe to set directly.
 		_ = unstructured.SetNestedMap(comp.Object, spec, "spec")
