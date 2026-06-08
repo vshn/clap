@@ -1,0 +1,11 @@
+apiVersion: appslap.io/v1
+kind: VSHNPostgreSQL
+metadata:
+  name: mydb
+  namespace: default
+  labels:
+    should-not-propagate: "true"
+  annotations:
+    should-not-propagate: "true"
+spec:
+  size: small
