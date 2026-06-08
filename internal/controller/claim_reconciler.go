@@ -42,12 +42,8 @@ func (r *ClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 	if ns == "" {
-		suffix, err := naming.RandomSuffix()
+		ns, err = r.createInstanceNamespace(ctx, claim.GetName())
 		if err != nil {
-			return ctrl.Result{}, err
-		}
-		ns = naming.InstanceNamespace(claim.GetName(), suffix)
-		if err := r.ensureNamespace(ctx, ns); err != nil {
 			return ctrl.Result{}, err
 		}
 		if err := unstructured.SetNestedField(claim.Object, ns, "status", "instanceNamespace"); err != nil {
@@ -73,6 +69,21 @@ func (r *ClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	return ctrl.Result{}, nil
 }
 
+// createInstanceNamespace creates a fresh instance namespace using the API
+// server's generateName directive: the server appends a random suffix to
+// "<claim>-" and truncates the base if needed to stay within 63 chars. The
+// assigned name is returned (read from the created object).
+func (r *ClaimReconciler) createInstanceNamespace(ctx context.Context, claimName string) (string, error) {
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: claimName + "-"}}
+	if err := r.Create(ctx, ns); err != nil {
+		return "", err
+	}
+	return ns.GetName(), nil
+}
+
+// ensureNamespace recreates the instance namespace by name if it has gone
+// missing. Used on the reuse path, where the name is already recorded in the
+// claim status.
 func (r *ClaimReconciler) ensureNamespace(ctx context.Context, name string) error {
 	ns := &corev1.Namespace{}
 	err := r.Get(ctx, types.NamespacedName{Name: name}, ns)
