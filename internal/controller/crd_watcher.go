@@ -113,8 +113,8 @@ func (w *CRDWatcher) ensureController(gvk schema.GroupVersionKind) error {
 	}
 
 	// Also watch the composite so its status changes re-reconcile the claim.
-	// The claim lives in a different namespace, recovered from the back-reference
-	// annotation CLAP stamps on the composite.
+	// The claim lives in a different namespace, read from the annotation CLAP
+	// sets on the composite.
 	comp := &unstructured.Unstructured{}
 	comp.SetGroupVersionKind(naming.CompositeGVK(gvk))
 	if err := c.Watch(source.Kind(

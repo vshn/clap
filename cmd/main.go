@@ -36,22 +36,27 @@ func init() {
 
 func main() {
 	var metricsAddr string
+	var enableMetrics bool
 	var enableLeaderElection bool
 	var probeAddr string
 	var enableHTTP2 bool
-	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
-		"Use :8080 to enable HTTP metrics, or leave as 0 to disable the metrics endpoint.")
+	flag.BoolVar(&enableMetrics, "enable-metrics", false,
+		"If set, serve the metrics endpoint on metrics-bind-address.")
+	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics server")
-	opts := zap.Options{
-		Development: true,
-	}
+	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	// Disable the metrics endpoint unless explicitly enabled.
+	if !enableMetrics {
+		metricsAddr = "0"
+	}
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
