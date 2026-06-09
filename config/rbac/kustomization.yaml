@@ -1,0 +1,9 @@
+resources:
+# All RBAC will be applied under this service account in the deployment
+# namespace. Be sure to update RoleBinding and ClusterRoleBinding subjects if
+# changing the service account name.
+- service_account.yaml
+- role.yaml
+- role_binding.yaml
+- leader_election_role.yaml
+- leader_election_role_binding.yaml

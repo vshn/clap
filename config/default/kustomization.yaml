@@ -1,0 +1,11 @@
+# Adds namespace to all resources.
+namespace: clap-system
+
+# Value of this field is prepended to the names of all resources, e.g. a
+# deployment named "wordpress" becomes "clap-wordpress". It should match the
+# prefix (text before '-') of the namespace field above.
+namePrefix: clap-
+
+resources:
+- ../rbac
+- ../manager
