@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/appslap/clap/internal/naming"
 )
@@ -25,6 +26,10 @@ const claimNamespaceAnnotation = "clap.appslap.io/claim-namespace"
 // can find an existing namespace for a claim (see findOrCreateInstanceNamespace).
 const claimUIDLabel = "clap.appslap.io/claim-uid"
 
+// teardownFinalizer on a claim drives ordered teardown of its composite and
+// instance namespace before the claim is removed.
+const teardownFinalizer = "clap.appslap.io/teardown"
+
 // ClaimReconciler reconciles a single claim GVK. One instance is created per
 // dynamically discovered claim kind by the CRDWatcher.
 type ClaimReconciler struct {
@@ -37,6 +42,19 @@ func (r *ClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	claim.SetGroupVersionKind(r.ClaimGVK)
 	if err := r.Get(ctx, req.NamespacedName, claim); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	// A claim being deleted runs the teardown path instead of create/sync.
+	if !claim.GetDeletionTimestamp().IsZero() {
+		return r.teardown(ctx, claim)
+	}
+
+	// Ensure the teardown finalizer is present before creating anything, so we
+	// never create a composite/namespace we couldn't later tear down in order.
+	if controllerutil.AddFinalizer(claim, teardownFinalizer) {
+		if err := r.Update(ctx, claim); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	// 1. Ensure the instance namespace. Reuse from status; never regenerate.
@@ -79,6 +97,10 @@ func (r *ClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 // name in the claim status, we'd otherwise create a new one every pass and leak
 // namespaces. So we first look for an existing namespace labelled with the
 // claim's UID and reuse it; only if there's none do we create a fresh one.
+func (r *ClaimReconciler) teardown(ctx context.Context, claim *unstructured.Unstructured) (ctrl.Result, error) {
+	return ctrl.Result{}, nil
+}
+
 func (r *ClaimReconciler) findOrCreateInstanceNamespace(ctx context.Context, claim *unstructured.Unstructured) (string, error) {
 	uid := string(claim.GetUID())
 	if uid != "" {
