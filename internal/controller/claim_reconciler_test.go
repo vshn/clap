@@ -61,6 +61,99 @@ func getClaim(t *testing.T, cl client.Client) (*unstructured.Unstructured, error
 	return c, err
 }
 
+// deletingClaim returns a claim already marked for deletion (finalizer present,
+// DeletionTimestamp set by the fake client) with its instance namespace recorded.
+func deletingClaim(t *testing.T, instanceNS string, extra ...client.Object) (client.Client, *ClaimReconciler) {
+	t.Helper()
+	claim := newClaim("db", "customer-a")
+	claim.SetFinalizers([]string{teardownFinalizer})
+	_ = unstructured.SetNestedField(claim.Object, instanceNS, "status", "instanceNamespace")
+	objs := append([]client.Object{claim}, extra...)
+	cl := fake.NewClientBuilder().WithScheme(newScheme()).
+		WithObjects(objs...).WithStatusSubresource(claimStatusObj()).Build()
+	if err := cl.Delete(context.Background(), claim); err != nil {
+		t.Fatal(err)
+	}
+	return cl, &ClaimReconciler{Client: cl, ClaimGVK: claimGVK}
+}
+
+func composite(ns, name string) *unstructured.Unstructured {
+	c := &unstructured.Unstructured{}
+	c.SetGroupVersionKind(naming.CompositeGVK(claimGVK))
+	c.SetNamespace(ns)
+	c.SetName(name)
+	return c
+}
+
+func TestTeardownDeletesCompositeFirstAndWaits(t *testing.T) {
+	comp := composite("db-xyz", "db")
+	instNS := &corev1.Namespace{}
+	instNS.SetName("db-xyz")
+	cl, r := deletingClaim(t, "db-xyz", comp, instNS)
+
+	res, err := r.Reconcile(context.Background(), ctrlRequest("db", "customer-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RequeueAfter == 0 {
+		t.Errorf("expected RequeueAfter while waiting on composite, got %v", res)
+	}
+	gotComp := composite("db-xyz", "db")
+	if err := cl.Get(context.Background(), types.NamespacedName{Namespace: "db-xyz", Name: "db"}, gotComp); err == nil {
+		t.Errorf("composite should have been deleted")
+	}
+	gotNS := &corev1.Namespace{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: "db-xyz"}, gotNS); err != nil {
+		t.Errorf("namespace deleted too early: %v", err)
+	}
+	if c, err := getClaim(t, cl); err != nil || len(c.GetFinalizers()) == 0 {
+		t.Errorf("finalizer should be retained while tearing down; err=%v", err)
+	}
+}
+
+func TestTeardownDeletesNamespaceAfterCompositeGone(t *testing.T) {
+	instNS := &corev1.Namespace{}
+	instNS.SetName("db-xyz")
+	cl, r := deletingClaim(t, "db-xyz", instNS) // no composite => already gone
+
+	res, err := r.Reconcile(context.Background(), ctrlRequest("db", "customer-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RequeueAfter == 0 {
+		t.Errorf("expected RequeueAfter while waiting on namespace, got %v", res)
+	}
+	gotNS := &corev1.Namespace{}
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: "db-xyz"}, gotNS); err == nil {
+		t.Errorf("namespace should have been deleted")
+	}
+	if c, err := getClaim(t, cl); err != nil || len(c.GetFinalizers()) == 0 {
+		t.Errorf("finalizer should be retained until namespace gone; err=%v", err)
+	}
+}
+
+func TestTeardownRemovesFinalizerWhenAllGone(t *testing.T) {
+	cl, r := deletingClaim(t, "db-xyz") // neither composite nor namespace exist
+
+	if _, err := r.Reconcile(context.Background(), ctrlRequest("db", "customer-a")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := getClaim(t, cl); err == nil {
+		t.Errorf("claim should be gone after finalizer removed")
+	}
+}
+
+func TestTeardownEmptyNamespaceRemovesFinalizer(t *testing.T) {
+	cl, r := deletingClaim(t, "") // never provisioned a namespace
+
+	if _, err := r.Reconcile(context.Background(), ctrlRequest("db", "customer-a")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := getClaim(t, cl); err == nil {
+		t.Errorf("claim should be gone when no instance namespace was recorded")
+	}
+}
+
 func TestReconcileAddsFinalizer(t *testing.T) {
 	claim := newClaim("db", "customer-a")
 	cl := fake.NewClientBuilder().WithScheme(newScheme()).
