@@ -1,0 +1,46 @@
+{
+  "pr_template": "- ${{TITLE}} (#${{NUMBER}})",
+  "categories": [
+    {
+      "title": "## 🚀 Features",
+      "labels": [
+        "enhancement",
+        "minor"
+      ]
+    },
+    {
+      "title": "## 🛠️ Minor Changes",
+      "labels": [
+        "change"
+      ]
+    },
+    {
+      "title": "## 🔎 Breaking Changes",
+      "labels": [
+        "breaking",
+        "major"
+      ]
+    },
+    {
+      "title": "## 🐛 Fixes",
+      "labels": [
+        "bug",
+        "patch"
+      ]
+    },
+    {
+      "title": "## 📄 Documentation",
+      "labels": [
+        "documentation"
+      ]
+    },
+    {
+      "title": "## 🔗 Dependency Updates",
+      "labels": [
+        "dependency",
+        "dependencies"
+      ]
+    }
+  ],
+  "template": "${{CATEGORIZED_COUNT}} changes since ${{FROM_TAG}}\n\n${{CHANGELOG}}"
+}
