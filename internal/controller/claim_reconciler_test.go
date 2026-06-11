@@ -45,12 +45,12 @@ func newClaim(name, ns string) *unstructured.Unstructured {
 	c.SetName(name)
 	c.SetNamespace(ns)
 	c.SetUID("uid-123")
-	c.Object["status"] = map[string]interface{}{}
+	c.Object["status"] = map[string]any{}
 	return c
 }
 
-func ctrlRequest(name, ns string) ctrl.Request {
-	return ctrl.Request{NamespacedName: types.NamespacedName{Name: name, Namespace: ns}}
+func ctrlRequest() ctrl.Request {
+	return ctrl.Request{NamespacedName: types.NamespacedName{Name: "db", Namespace: "customer-a"}}
 }
 
 func getClaim(t *testing.T, cl client.Client) (*unstructured.Unstructured, error) {
@@ -91,7 +91,7 @@ func TestTeardownDeletesCompositeFirstAndWaits(t *testing.T) {
 	instNS.SetName("db-xyz")
 	cl, r := deletingClaim(t, "db-xyz", comp, instNS)
 
-	res, err := r.Reconcile(context.Background(), ctrlRequest("db", "customer-a"))
+	res, err := r.Reconcile(context.Background(), ctrlRequest())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestTeardownDeletesNamespaceAfterCompositeGone(t *testing.T) {
 	instNS.SetName("db-xyz")
 	cl, r := deletingClaim(t, "db-xyz", instNS) // no composite => already gone
 
-	res, err := r.Reconcile(context.Background(), ctrlRequest("db", "customer-a"))
+	res, err := r.Reconcile(context.Background(), ctrlRequest())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestTeardownDeletesNamespaceAfterCompositeGone(t *testing.T) {
 func TestTeardownRemovesFinalizerWhenAllGone(t *testing.T) {
 	cl, r := deletingClaim(t, "db-xyz") // neither composite nor namespace exist
 
-	if _, err := r.Reconcile(context.Background(), ctrlRequest("db", "customer-a")); err != nil {
+	if _, err := r.Reconcile(context.Background(), ctrlRequest()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := getClaim(t, cl); err == nil {
@@ -146,7 +146,7 @@ func TestTeardownRemovesFinalizerWhenAllGone(t *testing.T) {
 func TestTeardownEmptyNamespaceRemovesFinalizer(t *testing.T) {
 	cl, r := deletingClaim(t, "") // never provisioned a namespace
 
-	if _, err := r.Reconcile(context.Background(), ctrlRequest("db", "customer-a")); err != nil {
+	if _, err := r.Reconcile(context.Background(), ctrlRequest()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := getClaim(t, cl); err == nil {
@@ -160,7 +160,7 @@ func TestReconcileAddsFinalizer(t *testing.T) {
 		WithObjects(claim).WithStatusSubresource(claimStatusObj()).Build()
 	r := &ClaimReconciler{Client: cl, ClaimGVK: claimGVK}
 
-	if _, err := r.Reconcile(context.Background(), ctrlRequest("db", "customer-a")); err != nil {
+	if _, err := r.Reconcile(context.Background(), ctrlRequest()); err != nil {
 		t.Fatal(err)
 	}
 	got, err := getClaim(t, cl)
