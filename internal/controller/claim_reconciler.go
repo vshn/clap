@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -12,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/appslap/clap/internal/naming"
 )
@@ -25,6 +27,10 @@ const claimNamespaceAnnotation = "clap.appslap.io/claim-namespace"
 // can find an existing namespace for a claim (see findOrCreateInstanceNamespace).
 const claimUIDLabel = "clap.appslap.io/claim-uid"
 
+// teardownFinalizer on a claim drives ordered teardown of its composite and
+// instance namespace before the claim is removed.
+const teardownFinalizer = "clap.appslap.io/teardown"
+
 // ClaimReconciler reconciles a single claim GVK. One instance is created per
 // dynamically discovered claim kind by the CRDWatcher.
 type ClaimReconciler struct {
@@ -37,6 +43,19 @@ func (r *ClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	claim.SetGroupVersionKind(r.ClaimGVK)
 	if err := r.Get(ctx, req.NamespacedName, claim); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	// A claim being deleted runs the teardown path instead of create/sync.
+	if !claim.GetDeletionTimestamp().IsZero() {
+		return r.teardown(ctx, claim)
+	}
+
+	// Ensure the teardown finalizer is present before creating anything, so we
+	// never create a composite/namespace we couldn't later tear down in order.
+	if controllerutil.AddFinalizer(claim, teardownFinalizer) {
+		if err := r.Update(ctx, claim); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	// 1. Ensure the instance namespace. Reuse from status; never regenerate.
@@ -79,6 +98,64 @@ func (r *ClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 // name in the claim status, we'd otherwise create a new one every pass and leak
 // namespaces. So we first look for an existing namespace labelled with the
 // claim's UID and reuse it; only if there's none do we create a fresh one.
+// teardownRequeue is how long to wait before re-checking an in-progress
+// deletion (composite teardown by Crossplane, or namespace finalization).
+const teardownRequeue = 5 * time.Second
+
+// teardown removes the composite then the instance namespace, in that order, so
+// Crossplane finishes external-resource teardown before the namespace (and its
+// contents) are deleted. It removes the finalizer only once both are gone.
+func (r *ClaimReconciler) teardown(ctx context.Context, claim *unstructured.Unstructured) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(claim, teardownFinalizer) {
+		return ctrl.Result{}, nil
+	}
+
+	ns, _, err := unstructured.NestedString(claim.Object, "status", "instanceNamespace")
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if ns != "" {
+		// 1. Composite: delete if present, then wait until it's fully gone. The
+		// composite watch re-reconciles the claim on deletion; the requeue is a
+		// backstop.
+		comp := &unstructured.Unstructured{}
+		comp.SetGroupVersionKind(naming.CompositeGVK(r.ClaimGVK))
+		err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: claim.GetName()}, comp)
+		switch {
+		case err == nil:
+			if comp.GetDeletionTimestamp().IsZero() {
+				if err := r.Delete(ctx, comp); err != nil && !apierrors.IsNotFound(err) {
+					return ctrl.Result{}, err
+				}
+			}
+			return ctrl.Result{RequeueAfter: teardownRequeue}, nil
+		case !apierrors.IsNotFound(err):
+			return ctrl.Result{}, err
+		}
+
+		// 2. Namespace: composite is gone; delete the namespace, then wait until
+		// it finishes terminating. Nothing watches namespaces, so we requeue.
+		nsObj := &corev1.Namespace{}
+		err = r.Get(ctx, types.NamespacedName{Name: ns}, nsObj)
+		switch {
+		case err == nil:
+			if nsObj.GetDeletionTimestamp().IsZero() {
+				if err := r.Delete(ctx, nsObj); err != nil && !apierrors.IsNotFound(err) {
+					return ctrl.Result{}, err
+				}
+			}
+			return ctrl.Result{RequeueAfter: teardownRequeue}, nil
+		case !apierrors.IsNotFound(err):
+			return ctrl.Result{}, err
+		}
+	}
+
+	// 3. Composite and namespace are gone (or never existed); drop the finalizer.
+	controllerutil.RemoveFinalizer(claim, teardownFinalizer)
+	return ctrl.Result{}, r.Update(ctx, claim)
+}
+
 func (r *ClaimReconciler) findOrCreateInstanceNamespace(ctx context.Context, claim *unstructured.Unstructured) (string, error) {
 	uid := string(claim.GetUID())
 	if uid != "" {

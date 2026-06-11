@@ -26,8 +26,8 @@ import (
 const ClaimGroup = "appslap.io"
 
 //+kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
-//+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create
-//+kubebuilder:rbac:groups=appslap.io,resources=*,verbs=get;list;watch;create;update;patch
+//+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups=appslap.io,resources=*,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=appslap.io,resources=*/status,verbs=get;update;patch
 
 // CRDWatcher discovers claim CRDs and starts a dynamic controller per claim GVK.
