@@ -22,3 +22,13 @@ func IsCompositeKind(kind string) bool {
 	}
 	return kind[1] >= 'A' && kind[1] <= 'Z'
 }
+
+// StripXPrefix drops a single leading X/x — the inverse of the X-prefix
+// convention, mapping composite names to claim names (XVSHNPostgreSQL →
+// VSHNPostgreSQL).
+func StripXPrefix(s string) string {
+	if len(s) > 0 && (s[0] == 'X' || s[0] == 'x') {
+		return s[1:]
+	}
+	return s
+}

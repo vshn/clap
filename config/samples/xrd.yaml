@@ -1,0 +1,29 @@
+# Sample appslap.io XRD. Crossplane makes the composite (XVSHNPostgreSQL) CRD;
+# CLAP's XRDReconciler makes the claim (VSHNPostgreSQL) CRD from it.
+# claimNames is omitted on purpose — setting it makes Crossplane create the
+# claim CRD itself, racing CLAP.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xvshnpostgresqls.appslap.io
+spec:
+  group: appslap.io
+  names:
+    kind: XVSHNPostgreSQL
+    listKind: XVSHNPostgreSQLList
+    plural: xvshnpostgresqls
+    singular: xvshnpostgresql
+  versions:
+    - name: v1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
