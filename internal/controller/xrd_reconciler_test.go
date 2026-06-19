@@ -33,6 +33,9 @@ func newXRD(group, compositeKind, plural string) *unstructured.Unstructured {
 		"listKind": compositeKind + "List",
 		"plural":   plural,
 		"singular": strings.ToLower(compositeKind),
+		// Array field under names: regression guard for NestedStringMap rejecting
+		// the whole map (slapper-generated XRDs carry shortNames here).
+		"shortNames": []any{"vpg"},
 	}, "spec", "names")
 	_ = unstructured.SetNestedSlice(x.Object, []any{
 		map[string]any{

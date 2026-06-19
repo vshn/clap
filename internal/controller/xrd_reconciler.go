@@ -73,15 +73,17 @@ func (r *XRDReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 // buildClaimCRD renders the claim CRD from an XRD: composite names with the
 // leading X stripped, versions/schema copied verbatim, Namespaced scope.
 func buildClaimCRD(xrd *unstructured.Unstructured, group string) (*apiextensionsv1.CustomResourceDefinition, error) {
-	rawNames, _, _ := unstructured.NestedStringMap(xrd.Object, "spec", "names")
-	if rawNames == nil {
-		return nil, fmt.Errorf("XRD has no spec.names")
+	// Read fields individually: spec.names also holds shortNames/categories
+	// (arrays), so NestedStringMap would reject the whole map.
+	name := func(field string) string {
+		s, _, _ := unstructured.NestedString(xrd.Object, "spec", "names", field)
+		return naming.StripXPrefix(s)
 	}
 	names := apiextensionsv1.CustomResourceDefinitionNames{
-		Kind:     naming.StripXPrefix(rawNames["kind"]),
-		ListKind: naming.StripXPrefix(rawNames["listKind"]),
-		Plural:   naming.StripXPrefix(rawNames["plural"]),
-		Singular: naming.StripXPrefix(rawNames["singular"]),
+		Kind:     name("kind"),
+		ListKind: name("listKind"),
+		Plural:   name("plural"),
+		Singular: name("singular"),
 	}
 	if names.Plural == "" {
 		return nil, fmt.Errorf("XRD has no spec.names.plural")
