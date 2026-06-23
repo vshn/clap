@@ -28,3 +28,19 @@ func TestIsCompositeKind(t *testing.T) {
 		}
 	}
 }
+
+func TestStripXPrefix(t *testing.T) {
+	cases := map[string]string{
+		"XVSHNPostgreSQL":     "VSHNPostgreSQL",
+		"XVSHNPostgreSQLList": "VSHNPostgreSQLList",
+		"xvshnpostgresqls":    "vshnpostgresqls",
+		"xvshnpostgresql":     "vshnpostgresql",
+		"Foo":                 "Foo", // no leading X/x, unchanged
+		"":                    "",
+	}
+	for in, want := range cases {
+		if got := StripXPrefix(in); got != want {
+			t.Errorf("StripXPrefix(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
